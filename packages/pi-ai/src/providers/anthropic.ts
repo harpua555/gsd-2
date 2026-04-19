@@ -20,6 +20,13 @@ import {
 	processAnthropicStream,
 	supportsAdaptiveThinking,
 } from "./anthropic-shared.js";
+.
+function isOAuthToken(token: string | undefined | null): boolean {
+	if (!token) return false;
+	return typeof token === "string" && (token.includes("oauth") || token.includes(".") || token.startsWith("claude-"));
+}
+
+const claudeCodeVersion = process.env.CLAUDE_CLI_VERSION || "unknown";
 
 // Re-export types used by other modules
 export type { AnthropicEffort, AnthropicOptions };
