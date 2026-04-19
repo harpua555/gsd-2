@@ -66,6 +66,11 @@ export function usesAnthropicBearerAuth(provider: Model<"anthropic-messages">["p
 	return provider === "alibaba-coding-plan" || provider === "minimax" || provider === "minimax-cn";
 }
 
+function hasBearerAuthorizationHeader(model: Model<"anthropic-messages">): boolean {
+	const authHeader = model.headers?.Authorization ?? model.headers?.authorization;
+	return typeof authHeader === "string" && authHeader.trim().toLowerCase().startsWith("bearer ");
+}
+
 async function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
@@ -112,12 +117,36 @@ async function createClient(
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
 
-	// API key auth (Anthropic OAuth removed per TOS compliance — use API keys or Claude CLI)
-	// Some Anthropic-compatible providers require Bearer auth instead of x-api-key.
-	const usesBearerAuth = usesAnthropicBearerAuth(model.provider);
+	// OAuth: Bearer auth, Claude Code identity headers
+	if (isOAuthToken(apiKey)) {
+		const client = new AnthropicClass({
+			apiKey: null,
+			authToken: apiKey,
+			baseURL: model.baseUrl,
+			dangerouslyAllowBrowser: true,
+			defaultHeaders: mergeHeaders(
+				{
+					accept: "application/json",
+					"anthropic-dangerous-direct-browser-access": "true",
+					...(betaFeatures.length > 0 ? { "anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}` } : {}),
+					"user-agent": `claude-cli/${claudeCodeVersion}`,
+					"x-app": "cli",
+				},
+				model.headers,
+				optionsHeaders,
+			),
+		});
+
+		return { client, isOAuthToken: true };
+	}
+
+	// API key auth
+	// Alibaba Coding Plan and custom providers with Authorization: Bearer
+	// headers must authenticate via authToken instead of x-api-key.
+	const useBearerAuth = model.provider === "alibaba-coding-plan" || hasBearerAuthorizationHeader(model);
 	const client = new AnthropicClass({
-		apiKey: usesBearerAuth ? null : apiKey,
-		authToken: usesBearerAuth ? apiKey : undefined,
+		apiKey: useBearerAuth ? null : apiKey,
+		authToken: useBearerAuth ? apiKey : undefined,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(
